@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "driver/gpio.h"
+#include "driver/adc.h"
+#include "freertos/FreeRTOS.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -11,7 +14,13 @@
 #include "wifi_provisioning/scheme_softap.h"
 // #include "pl_modbus.h"
 #include "mbcontroller.h"
+#include "hydrosensor.h"
 
+//#define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
+//#define SWITCH_PIN_2 GPIO_NUM_19
+//#define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
+#define PROV_TSK_PRIORITY 2
+#define MB_TSK_PRIORITY 2
 #define STD_MB_PORT 502
 #define MB_SLAVE_ADDR 17
 
@@ -20,18 +29,18 @@ esp_netif_t *netif = NULL;
 static const char *TAG = "DEVICE";
 
 char device_ip_addr_str[16];
-
-typedef enum dMode
+typedef enum deviceMode
 {
     dMode_MODBUS,
     dMode_PROV,
     dMode_STA
-} deviceMode;
+} dMode;
 
-deviceMode Mode;
+dMode deviceMode;
 
 void modbus_tcp_slave_init()
 {
+
     ESP_LOGI(TAG, "netif pointer: %p", netif);
 
     void *mb_slave_handler = NULL;
@@ -79,18 +88,29 @@ void modbus_tcp_slave_init()
     ESP_LOGI(TAG, "mb_slave_handler: %p", mb_slave_handler);
 
     ESP_LOGI(TAG, "Dispositivo modbus slave iniciado em %s:%d\n", device_ip_addr_str, STD_MB_PORT);
-    Mode = dMode_MODBUS;
+
+    deviceMode = dMode_MODBUS;
 
     while (true)
     {
         (void)mbc_slave_lock(mb_slave_handler);
-        holding_reg[0] = 235;
+        holding_reg[0] = hydrosensor_read_height();  // Leitura do sensor de pressão
+        input_reg[0] = gpio_get_level(GPIO_NUM_18); // Leitura das bóias
+        input_reg[1] = gpio_get_level(GPIO_NUM_19);
         (void)mbc_slave_unlock(mb_slave_handler);
 
         /*esp_log_level_set("MB_TCP_SLAVE", ESP_LOG_DEBUG);
         esp_log_level_set("MB_PORT_COMMON", ESP_LOG_DEBUG);
         esp_log_level_set("MB_CONTROLLER_SLAVE", ESP_LOG_DEBUG);*/
         vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
+void modbus_service()
+{
+    if (deviceMode == dMode_STA)
+    {
+        modbus_tcp_slave_init();
     }
 }
 
@@ -119,7 +139,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
         //  Converte o ip do dispositivo para uma string, após a conexão
         esp_ip4addr_ntoa(&event->ip_info.ip, device_ip_addr_str, sizeof(device_ip_addr_str));
-        Mode = dMode_STA;
+        printf("Trocando para STA...");
+        deviceMode = dMode_STA;
         // netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
         // vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -131,9 +152,9 @@ static void on_prov_end(void *arg, esp_event_base_t event_base, int32_t event_id
     ESP_LOGI(TAG, "IP do dispositivo: %s", device_ip_addr_str);
 
     wifi_prov_mgr_deinit();
-    Mode = dMode_STA;
+    deviceMode = dMode_STA;
     //  Iniciar Modbus TCP ou outras lógicas pós-conexão
-    //modbus_tcp_slave_init();
+    // modbus_tcp_slave_init();
 }
 
 void start_wifi_prov()
@@ -191,7 +212,7 @@ void start_wifi_prov()
 
     ESP_ERROR_CHECK(wifi_prov_mgr_is_provisioned(&provisioned));
 
-    Mode = dMode_PROV;
+    deviceMode = dMode_PROV;
 
     if (!provisioned)
     {
@@ -203,9 +224,10 @@ void start_wifi_prov()
         ESP_LOGI(TAG, "Dispositivo já provisionado. Conectando à rede wireless...");
 
         vTaskDelay(pdMS_TO_TICKS(10000));
-        Mode = dMode_STA;
-        //modbus_tcp_slave_init();
-        // ESP_ERROR_CHECK(esp_wifi_connect());
+        deviceMode = dMode_STA;
+        printf("Provisionado, Trocando para STA...");
+        // modbus_tcp_slave_init();
+        //  ESP_ERROR_CHECK(esp_wifi_connect());
     }
 }
 
@@ -215,14 +237,15 @@ void start_wifi_prov()
     return ESP_OK;
 }*/
 
-void app_main()
+void app_main(void)
 {
-    // nvs_flash_erase();
-    //   Inicia o provisionamento
-    start_wifi_prov();
-    if (Mode == dMode_STA)
-    {
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        modbus_tcp_slave_init();
-    }
+    // Inicializa o sensor de pressão hidrostática
+    hydrosensor_init(ADC1_CHANNEL_0);
+    // Inicializa as bóias digitais
+    gpio_set_direction(GPIO_NUM_18, GPIO_MODE_INPUT);
+    gpio_set_direction(GPIO_NUM_19, GPIO_MODE_INPUT);
+    // Inicia o provisionamento
+    xTaskCreate(start_wifi_prov, "PROV_INIT", 2048, NULL, PROV_TSK_PRIORITY, NULL);
+    // Inicia o processo modbus
+    xTaskCreate(modbus_service, "MB_SLAVE_TASK", 2048, NULL, MB_TSK_PRIORITY, NULL);
 }
