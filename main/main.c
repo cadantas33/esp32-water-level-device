@@ -18,8 +18,8 @@
 #include "ssd1306.h"
 #include "hydrosensor.h"
 
-#define I2C_SDA 21
-#define I2C_SCL 22
+#define I2C_SDA 15
+#define I2C_SCL 2
 // #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
 // #define SWITCH_PIN_2 GPIO_NUM_19
 // #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
@@ -301,7 +301,7 @@ void start_wifi_prov()
 void app_main(void)
 {
     // Inicializa o sensor de pressão hidrostática
-    hydrosensor_init(ADC1_CHANNEL_0);
+    hydrosensor_init(ADC1_CHANNEL_4);
     // Inicializa as bóias digitais
     gpio_set_direction(GPIO_NUM_18, GPIO_MODE_INPUT);
     gpio_set_direction(GPIO_NUM_19, GPIO_MODE_INPUT);
