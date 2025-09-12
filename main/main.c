@@ -164,7 +164,7 @@ void modbus_tcp_slave_init(void *pvParams)
     {
         (void)mbc_slave_lock(mb_slave_handler);
         holding_reg[0] = hydrosensor_read_height(); // Leitura do sensor de pressão
-        discr_in[0] = gpio_get_level(GPIO_NUM_18); // Leitura das boias
+        discr_in[0] = gpio_get_level(GPIO_NUM_18);  // Leitura das boias
         discr_in[1] = gpio_get_level(GPIO_NUM_19);
         (void)mbc_slave_unlock(mb_slave_handler);
 
@@ -318,7 +318,7 @@ void app_main(void)
     xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
     //  Inicia o provisionamento
     start_wifi_prov();
-    //xTaskCreate(start_wifi_prov, "PROV_INIT", 1024 * 4, NULL, PROV_TSK_PRIORITY, NULL);
-    // Inicia o processo modbus
+    // xTaskCreate(start_wifi_prov, "PROV_INIT", 1024 * 4, NULL, PROV_TSK_PRIORITY, NULL);
+    //  Inicia o processo modbus
     xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 4, NULL, MB_TSK_PRIORITY, NULL);
 }
