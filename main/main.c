@@ -18,8 +18,8 @@
 #include "ssd1306.h"
 #include "hydrosensor.h"
 
-#define I2C_SDA 21
-#define I2C_SCL 22
+#define I2C_SDA 15
+#define I2C_SCL 2
 // #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
 // #define SWITCH_PIN_2 GPIO_NUM_19
 // #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
@@ -168,6 +168,12 @@ void modbus_tcp_slave_init(void *pvParams)
         discr_in[1] = gpio_get_level(GPIO_NUM_19);
         (void)mbc_slave_unlock(mb_slave_handler);
 
+        if (gpio_get_level(GPIO_NUM_21) == 0)
+        {                      // Leitura do botao de reset do provisionamento
+            nvs_flash_erase(); // Memmoria nao volatil (nvs) é apagada quando o botão é pressionado
+            mbc_slave_stop(mb_slave_handler); // Modbus slave é parado quando o botão é pressionado
+            start_wifi_prov(); // Provisioning reinicia
+        }
         /*esp_log_level_set("MB_TCP_SLAVE", ESP_LOG_DEBUG);
         esp_log_level_set("MB_PORT_COMMON", ESP_LOG_DEBUG);
         esp_log_level_set("MB_CONTROLLER_SLAVE", ESP_LOG_DEBUG);*/
@@ -304,16 +310,24 @@ void app_main(void)
     // Inicializa o sensor de pressão hidrostática
     hydrosensor_init(ADC1_CHANNEL_4);
     // Configura e inicializa as boais digitais
-    gpio_config_t gpio_cfg = {
+    gpio_config_t sw_cfg = {
         .pin_bit_mask = (1ULL << GPIO_NUM_18) | (1ULL << GPIO_NUM_19), // Pinos 18 e 19 como conexão de entrada das boias
         .mode = GPIO_MODE_INPUT,                                       // Configura como pinos de entrada
         .pull_up_en = GPIO_PULLUP_DISABLE,                             // Pull-up desabilitado
         .pull_down_en = GPIO_PULLDOWN_ENABLE,                          // Pull-down ativado pois será necessário
         .intr_type = GPIO_INTR_DISABLE                                 // Interrupções desabilitadas nestes pinos
     };
-    gpio_config(&gpio_cfg);
-    // gpio_set_direction(GPIO_NUM_18, GPIO_MODE_INPUT);
-    // gpio_set_direction(GPIO_NUM_19, GPIO_MODE_INPUT);
+    gpio_config(&sw_cfg);
+
+    // Configura e inicializa botao de reset do provisioning
+    gpio_config_t rst_cfg = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_21), // Pinos 20 como conexão de entrada do botao
+        .mode = GPIO_MODE_INPUT,               // Configura como entrada
+        .pull_up_en = GPIO_PULLUP_DISABLE,     // Pull-up habilitado
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,  // Pull-down desativado
+        .intr_type = GPIO_INTR_DISABLE         // Interrupções desabilitadas
+    };
+    gpio_config(&rst_cfg);
     //  Inicia o display
     xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
     //  Inicia o provisionamento
