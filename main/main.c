@@ -23,25 +23,23 @@
 // #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
 // #define SWITCH_PIN_2 GPIO_NUM_19
 // #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
-#define PROV_TSK_PRIORITY 2
-#define MB_TSK_PRIORITY 1
-#define DISP_TASK_PRIORITY 3
+#define PROV_TSK_PRIORITY 1
+#define MB_TSK_PRIORITY 3
+#define DISP_TASK_PRIORITY 2
 #define STD_MB_PORT 502
 #define MB_SLAVE_ADDR 17
-
-esp_netif_t *netif = NULL;
 
 static const char *TAG = "DEVICE";
 
 char net_ssid_buff[64], device_ip_buff[64], device_ip_addr_str[16];
 
+esp_netif_t *netif = NULL;
 typedef enum deviceMode
 {
     dMode_MODBUS,
     dMode_PROV,
     dMode_STA
 } dMode;
-
 dMode deviceMode;
 
 // Tarefa/função do display OLED
@@ -106,14 +104,14 @@ void ssd1306_display_service()
     }
 }
 
-void modbus_tcp_slave_init()
+void modbus_tcp_slave_init(void *pvParams)
 {
 
     ESP_LOGI(TAG, "netif pointer: %p", netif);
 
     void *mb_slave_handler = NULL;
 
-    static uint16_t holding_reg[1] = {0}, input_reg[2] = {0, 1};
+    static uint16_t holding_reg[1] = {0}, discr_in[2] = {0, 1};
 
     mb_communication_info_t tcp_cfg = {
         .tcp_opts.mode = MB_TCP,
@@ -145,26 +143,29 @@ void modbus_tcp_slave_init()
     reg_area.access = MB_ACCESS_RW;
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(mb_slave_handler, reg_area));
 
-    reg_area.type = MB_PARAM_INPUT;
+    reg_area.type = MB_PARAM_DISCRETE;
     reg_area.start_offset = 0;
-    reg_area.address = (void *)&input_reg;
-    reg_area.size = sizeof(input_reg);
+    reg_area.address = (void *)&discr_in;
+    reg_area.size = sizeof(discr_in);
     reg_area.access = MB_ACCESS_RW;
     ESP_ERROR_CHECK(mbc_slave_set_descriptor(mb_slave_handler, reg_area));
     // modbus_slave_init();
-    ESP_ERROR_CHECK(mbc_slave_start(mb_slave_handler));
-    ESP_LOGI(TAG, "mb_slave_handler: %p", mb_slave_handler);
+    if (deviceMode == dMode_STA)
+    {
+        ESP_ERROR_CHECK(mbc_slave_start(mb_slave_handler));
+        ESP_LOGI(TAG, "mb_slave_handler: %p", mb_slave_handler);
 
-    ESP_LOGI(TAG, "Dispositivo modbus slave iniciado em %s:%d\n", device_ip_addr_str, STD_MB_PORT);
+        ESP_LOGI(TAG, "Dispositivo modbus slave iniciado em %s:%d\n", device_ip_addr_str, STD_MB_PORT);
+    }
 
     deviceMode = dMode_MODBUS;
 
-    while (true)
+    for (;;)
     {
         (void)mbc_slave_lock(mb_slave_handler);
         holding_reg[0] = hydrosensor_read_height(); // Leitura do sensor de pressão
-        input_reg[0] = gpio_get_level(GPIO_NUM_18); // Leitura das bóias
-        input_reg[1] = gpio_get_level(GPIO_NUM_19);
+        discr_in[0] = gpio_get_level(GPIO_NUM_18); // Leitura das boias
+        discr_in[1] = gpio_get_level(GPIO_NUM_19);
         (void)mbc_slave_unlock(mb_slave_handler);
 
         /*esp_log_level_set("MB_TCP_SLAVE", ESP_LOG_DEBUG);
@@ -174,13 +175,13 @@ void modbus_tcp_slave_init()
     }
 }
 
-void modbus_service()
+/*void modbus_service()
 {
     if (deviceMode == dMode_STA)
     {
         modbus_tcp_slave_init();
     }
-}
+}*/
 
 /*extern "C"  void modbus_tcp_slave_init()
 {
@@ -301,14 +302,23 @@ void start_wifi_prov()
 void app_main(void)
 {
     // Inicializa o sensor de pressão hidrostática
-    hydrosensor_init(ADC1_CHANNEL_0);
-    // Inicializa as bóias digitais
-    gpio_set_direction(GPIO_NUM_18, GPIO_MODE_INPUT);
-    gpio_set_direction(GPIO_NUM_19, GPIO_MODE_INPUT);
-    // Inicia o display
+    hydrosensor_init(ADC1_CHANNEL_4);
+    // Configura e inicializa as boais digitais
+    gpio_config_t gpio_cfg = {
+        .pin_bit_mask = (1ULL << GPIO_NUM_18) | (1ULL << GPIO_NUM_19), // Pinos 18 e 19 como conexão de entrada das boias
+        .mode = GPIO_MODE_INPUT,                                       // Configura como pinos de entrada
+        .pull_up_en = GPIO_PULLUP_DISABLE,                             // Pull-up desabilitado
+        .pull_down_en = GPIO_PULLDOWN_ENABLE,                          // Pull-down ativado pois será necessário
+        .intr_type = GPIO_INTR_DISABLE                                 // Interrupções desabilitadas nestes pinos
+    };
+    gpio_config(&gpio_cfg);
+    // gpio_set_direction(GPIO_NUM_18, GPIO_MODE_INPUT);
+    // gpio_set_direction(GPIO_NUM_19, GPIO_MODE_INPUT);
+    //  Inicia o display
     xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
-    // Inicia o provisionamento
-    xTaskCreate(start_wifi_prov, "PROV_INIT", 2048, NULL, PROV_TSK_PRIORITY, NULL);
+    //  Inicia o provisionamento
+    start_wifi_prov();
+    //xTaskCreate(start_wifi_prov, "PROV_INIT", 1024 * 4, NULL, PROV_TSK_PRIORITY, NULL);
     // Inicia o processo modbus
-    xTaskCreate(modbus_service, "MB_SLAVE_TASK", 2048, NULL, MB_TSK_PRIORITY, NULL);
+    xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 4, NULL, MB_TSK_PRIORITY, NULL);
 }
