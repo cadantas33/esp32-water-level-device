@@ -162,17 +162,17 @@ void modbus_tcp_slave_init(void *pvParams)
 
     for (;;)
     {
-        (void)mbc_slave_lock(mb_slave_handler);
+        //(void)mbc_slave_lock(mb_slave_handler);
         holding_reg[0] = hydrosensor_read_height(); // Leitura do sensor de pressão
         discr_in[0] = gpio_get_level(GPIO_NUM_18);  // Leitura das boias
         discr_in[1] = gpio_get_level(GPIO_NUM_19);
-        (void)mbc_slave_unlock(mb_slave_handler);
+        //(void)mbc_slave_unlock(mb_slave_handler);
 
         if (gpio_get_level(GPIO_NUM_21) == 0)
         {                      // Leitura do botao de reset do provisionamento
             nvs_flash_erase(); // Memmoria nao volatil (nvs) é apagada quando o botão é pressionado
             mbc_slave_stop(mb_slave_handler); // Modbus slave é parado quando o botão é pressionado
-            start_wifi_prov(); // Provisioning reinicia
+            esp_restart(); // Performa um reinício via software
         }
         /*esp_log_level_set("MB_TCP_SLAVE", ESP_LOG_DEBUG);
         esp_log_level_set("MB_PORT_COMMON", ESP_LOG_DEBUG);
