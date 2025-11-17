@@ -19,13 +19,13 @@ static adc_cali_handle_t cal_handle = NULL;
 // Inicialização do sensor, com base no canal definido
 void hydrosensor_init(int channel)
 {
-    adc_cali_handle_t handle = NULL;
+    //adc_cali_handle_t handle = NULL;
     adc_cali_line_fitting_config_t cal_cfg = {
         .unit_id = 1,
         .atten = 11,
         .bitwidth = ADC_BITWIDTH_DEFAULT};
 
-    ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cal_cfg, &handle));
+    ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cal_cfg, &cal_handle));
     ESP_LOGI(TAG, "Calibração do ADC: Linear");
 
     adc_channel = channel;
