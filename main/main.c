@@ -163,6 +163,7 @@ void modbus_tcp_slave_init(void *pvParams)
     for (;;)
     {
         //(void)mbc_slave_lock(mb_slave_handler);
+        hydrosensor_read_pressure();
         holding_reg[0] = hydrosensor_read_height(); // Leitura do sensor de pressão
         discr_in[0] = gpio_get_level(GPIO_NUM_18);  // Leitura das boias
         discr_in[1] = gpio_get_level(GPIO_NUM_19);
