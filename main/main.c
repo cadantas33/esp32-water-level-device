@@ -322,7 +322,7 @@ void app_main(void)
 
     // Configura e inicializa botao de reset do provisioning
     gpio_config_t rst_cfg = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_21), // Pinos 20 como conexão de entrada do botao
+        .pin_bit_mask = (1ULL << GPIO_NUM_21), // Pino 20 como conexão de entrada do botao
         .mode = GPIO_MODE_INPUT,               // Configura como entrada
         .pull_up_en = GPIO_PULLUP_DISABLE,     // Pull-up habilitado
         .pull_down_en = GPIO_PULLDOWN_ENABLE,  // Pull-down desativado
@@ -330,8 +330,9 @@ void app_main(void)
     };
     gpio_config(&rst_cfg);
     //  Inicia o display
-    xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
+    //xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
     //  Inicia o provisionamento
+    //nvs_flash_erase();
     start_wifi_prov();
     // xTaskCreate(start_wifi_prov, "PROV_INIT", 1024 * 4, NULL, PROV_TSK_PRIORITY, NULL);
     //  Inicia o processo modbus

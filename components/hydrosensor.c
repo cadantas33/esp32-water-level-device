@@ -6,14 +6,14 @@
 #include "esp_log.h"
 
 #define ADC_RES 4095 // Resolução do ADC do ESP32
-#define MAX_KPA 100000.0f
-#define VREF_MAX 3.3f
-#define VREF_MIN 0.66f
-#define ENV_ACC_X1000 9806.65f
+#define MAX_KPA 100000.0f // Pressão máxima em KPA (x1000)
+#define VREF_MAX 3.3f // Tensão de referência máxima
+#define VREF_MIN 0.66f // Tensão de referência mínima
+#define ENV_ACC_X1000 9806.65f // Aceleração do ambiente multiplicada pela densidade da água (x 1000)
 
 int adc_channel; // Variável inteira que identifica o canal ADC
-int adc_raw;
-int voltage;
+int adc_raw; // Variável que recebe valor adc "puro"
+int voltage; // Variável para armazenar a tensão medida no ADC
 
 float pressure_kpa; // Variável para valor de pressão lida do sensor, em kPa
 
@@ -51,21 +51,21 @@ void hydrosensor_init(int channel)
 // Leitura da pressão lida pelo sensor
 float hydrosensor_read_pressure(void)
 {
-
+    // Lê o pino analógico e armazena na variável adc_raw
     adc_oneshot_read(adc1_handle, adc_channel, &adc_raw);
     // int voltage = ((adc_raw * VREF_MAX) / ADC_RES);
-
+    // Converte o valor para tensão calibrada
     adc_cali_raw_to_voltage(cal_handle, adc_raw, &voltage);
-
+    // Algoritmo de conversão de valor adc para pressão
     pressure_kpa = ((voltage - VREF_MIN) / (VREF_MAX - VREF_MIN)) * MAX_KPA;
-
+    // retorna o valor da pressão em kpa, ao fim
     return pressure_kpa;
 }
 
 // Leitura direta da coluna d'água
 float hydrosensor_read_height(void)
 {
-    // A altura h em metros = (pressão * 1000) / densidade do fluido * gravidade ou aceleração
+    // A altura h em metros = (pressão * 1000) / densidade do fluido * aceleração
     // Nesse caso, h = (pressão * 1000) / 1000 * 9.81
     float m_height = pressure_kpa / ENV_ACC_X1000;
 
