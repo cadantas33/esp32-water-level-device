@@ -5,3 +5,12 @@ Este repositório possui o código fonte para um dispositivo de medição de ní
 ## Utilização
 
 Clone/baixe o repositório e abra a pasta no VSCode. É necessária a extensão ESP-IDF instalada juntamente à IDE.
+
+## Registradores Modbus
+
+| Item | Função | Pino |
+| :----------: | :----------: | :----------: |
+| Sonda | Holding Reg 01 | 32 |
+| Boia 1 | Discrete In 01 | 18 |
+| Boia 2 | Discrete In 02 | 19 |
+| Boia 3 | Discrete In 03 | |
