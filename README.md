@@ -13,3 +13,4 @@ Baixe o repositório ou clone para o VSCode. É necessária a extensão da ESP-I
 | Sonda | Holding Reg 01 | 32 |
 | Boia 1 | Discrete In 01 | 18 |
 | Boia 2 | Discrete In 02 | 19 |
+| Push button | Reset | 21 |
