@@ -1,5 +1,3 @@
-# Medindo o nível de um reservatório com sensores de pressão
-
 Medidor de nível para reservatório aberto, com ESP32, um par de boias e uma sonda hidrostática.
 
 ## Utilização
