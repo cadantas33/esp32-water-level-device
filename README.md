@@ -1,5 +1,3 @@
-Medidor de nível para reservatório aberto, com ESP32, um par de boias e uma sonda hidrostática.
-
 ## Utilização
 
 Baixe o repositório ou clone para o VSCode. É necessária a extensão da ESP-IDF para compilar o projeto & seus componentes.
