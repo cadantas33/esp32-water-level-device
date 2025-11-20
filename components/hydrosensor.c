@@ -31,13 +31,13 @@ void hydrosensor_init(int channel)
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
 
     adc_oneshot_chan_cfg_t adc_cfg = {
-        .atten = ADC_ATTEN_DB_12,
+        .atten = ADC_ATTEN_DB_11,
         .bitwidth = ADC_BITWIDTH_12};
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, adc_channel, &adc_cfg));
     // adc_cali_handle_t handle = NULL;
     adc_cali_line_fitting_config_t cal_cfg = {
-        .unit_id = 1,
-        .atten = 11,
+        .unit_id = ADC_UNIT_1,
+        .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_DEFAULT};
 
     ESP_ERROR_CHECK(adc_cali_create_scheme_line_fitting(&cal_cfg, &cal_handle));

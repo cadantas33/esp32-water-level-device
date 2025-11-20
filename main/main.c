@@ -23,9 +23,9 @@
 // #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
 // #define SWITCH_PIN_2 GPIO_NUM_19
 // #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
-#define PROV_TSK_PRIORITY 1
-#define MB_TSK_PRIORITY 3
-#define DISP_TASK_PRIORITY 2
+#define PROV_TSK_PRIORITY 2
+#define MB_TSK_PRIORITY 1
+#define DISP_TASK_PRIORITY 3
 #define STD_MB_PORT 502
 #define MB_SLAVE_ADDR 17
 
@@ -156,24 +156,24 @@ void modbus_tcp_slave_init(void *pvParams)
         ESP_LOGI(TAG, "mb_slave_handler: %p", mb_slave_handler);
 
         ESP_LOGI(TAG, "Dispositivo modbus slave iniciado em %s:%d\n", device_ip_addr_str, STD_MB_PORT);
+        deviceMode = dMode_MODBUS;
     }
-
-    deviceMode = dMode_MODBUS;
 
     for (;;)
     {
-        //(void)mbc_slave_lock(mb_slave_handler);
+
+        (void)mbc_slave_lock(mb_slave_handler);
         hydrosensor_read_pressure();
         holding_reg[0] = hydrosensor_read_height(); // Leitura do sensor de pressão
         discr_in[0] = gpio_get_level(GPIO_NUM_18);  // Leitura das boias
         discr_in[1] = gpio_get_level(GPIO_NUM_19);
-        //(void)mbc_slave_unlock(mb_slave_handler);
+        (void)mbc_slave_unlock(mb_slave_handler);
 
-        if (gpio_get_level(GPIO_NUM_21) == 0)
-        {                      // Leitura do botao de reset do provisionamento
-            nvs_flash_erase(); // Memmoria nao volatil (nvs) é apagada quando o botão é pressionado
-            mbc_slave_stop(mb_slave_handler); // Modbus slave é parado quando o botão é pressionado
-            esp_restart(); // Performa um reinício via software
+        if (gpio_get_level(GPIO_NUM_21) == 1)
+        {                                     // Leitura do botao de reset do provisionamento
+            nvs_flash_erase();                // Memmoria nao volatil (nvs) é apagada quando o botão é pressionado
+            //mbc_slave_stop(mb_slave_handler); // Modbus slave é parado quando o botão é pressionado
+            esp_restart();                    // Performa um reinício via software
         }
         /*esp_log_level_set("MB_TCP_SLAVE", ESP_LOG_DEBUG);
         esp_log_level_set("MB_PORT_COMMON", ESP_LOG_DEBUG);
@@ -330,11 +330,11 @@ void app_main(void)
     };
     gpio_config(&rst_cfg);
     //  Inicia o display
-    //xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
+    // xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
     //  Inicia o provisionamento
-    //nvs_flash_erase();
+    nvs_flash_erase();
     start_wifi_prov();
     // xTaskCreate(start_wifi_prov, "PROV_INIT", 1024 * 4, NULL, PROV_TSK_PRIORITY, NULL);
     //  Inicia o processo modbus
-    xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 4, NULL, MB_TSK_PRIORITY, NULL);
+    xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 5, NULL, MB_TSK_PRIORITY, NULL);
 }
