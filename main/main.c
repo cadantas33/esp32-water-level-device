@@ -18,8 +18,8 @@
 #include "ssd1306.h"
 #include "hydrosensor.h"
 
-#define I2C_SDA 15
-#define I2C_SCL 2
+#define I2C_SDA 16
+#define I2C_SCL 17
 // #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
 // #define SWITCH_PIN_2 GPIO_NUM_19
 // #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
