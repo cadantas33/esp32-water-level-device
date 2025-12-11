@@ -6,9 +6,9 @@ Baixe o repositório ou clone para o VSCode. É necessária a extensão da ESP-I
 
 | Item | Função | Pino |
 | :----------: | :----------: | :----------: |
-| Sonda | Holding Reg 01 | 32 |
-| Boia 1 | Discrete In 01 | 18 (PULL-DOWN) |
-| Boia 2 | Discrete In 02 | 19 (PULL-DOWN) |
-| Push button | Reboot | 21 (PULL-UP) |
-| Disp OLED | SDA | 16 |
-| Disp OLED | SCL | 17 |
+| Sonda | Holding Reg 01 | GPIO32 |
+| Boia 1 | Discrete In 01 | GPIO2 (PULL-UP) |
+| Boia 2 | Discrete In 02 | GPIO4 (PULL-UP) |
+| Push button | Reboot | GPIO18 (PULL-UP) |
+| Disp OLED | SDA | GPIO21 |
+| Disp OLED | SCL | GPIO22 |
