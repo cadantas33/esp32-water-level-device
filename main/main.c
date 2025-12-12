@@ -4,9 +4,12 @@
 #include "driver/gpio.h"
 #include "driver/adc.h"
 #include "driver/i2c_master.h"
+
 #include "freertos/FreeRTOS.h"
+
 #include "esp_err.h"
 #include "esp_log.h"
+
 #include "esp_wifi.h"
 #include "esp_netif.h"
 #include "esp_event.h"
@@ -15,26 +18,28 @@
 #include "wifi_provisioning/scheme_softap.h"
 
 #include "mbcontroller.h"
-#include "ssd1306.h"
 #include "hydrosensor.h"
+#include "ssd1306.h"
+#include "font8x8_basic.h"
 
-#define I2C_SDA 16
-#define I2C_SCL 17
-// #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
-// #define SWITCH_PIN_2 GPIO_NUM_19
-// #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
+// I2C Padrão
+#define I2C_SDA 21
+#define I2C_SCL 22
+// Prioridade de tasks
 #define PROV_TSK_PRIORITY 2
 #define MB_TSK_PRIORITY 1
 #define DISP_TASK_PRIORITY 3
 #define STD_MB_PORT 502
 #define MB_SLAVE_ADDR 17
 
-static const char *TAG = "DEVICE";
+static const char *TAG = "DEVICE"; // Nome que vai aparecer nos LOGs do dispositivo
 
+// Buffers para armazenar dados da rede em string/texto
 char net_ssid_buff[64], device_ip_buff[128], device_ip_addr_str[16];
 
-esp_netif_t *netif = NULL;
-typedef enum deviceMode
+esp_netif_t *netif = NULL; // Ponteiro da interface de rede
+
+typedef enum deviceMode // Modos do dispositivo
 {
     dMode_MODBUS,
     dMode_PROV,
@@ -45,68 +50,60 @@ dMode deviceMode;
 // Tarefa/função do display OLED
 void ssd1306_display_service()
 {
-    // Define configurações do canal i2c master
     i2c_master_bus_config_t bus_cfg = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = I2C_NUM_0,
         .sda_io_num = I2C_SDA,
         .scl_io_num = I2C_SCL,
+        .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true};
-    // Cria e inicializa um handler para o barramento i2c
+        .flags.enable_internal_pullup = true,
+    };
+
     i2c_master_bus_handle_t bus_handle;
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus_handle));
+    // Configuração de endereço e canal i2c para o display
+    SSD1306_t disp_cfg = {
+        ._address = 0x3C};
 
-    ssd1306_config_t disp_cfg = I2C_SSD1306_128x64_CONFIG_DEFAULT; // Configuração de display i2c 128x64px padrão
-    ssd1306_handle_t disp_handler;                                 // Handler padrão
+    // Inicializa o display com as configurações
+    ssd1306_init(&disp_cfg, 128, 64);
+    // Limpa a tela
+    ssd1306_clear_screen(&disp_cfg, false);
+    // Configura contraste
+    ssd1306_contrast(&disp_cfg, 0xff);
 
-    // Inicialização do display com base na cfg e handler definidos
-    ssd1306_init(bus_handle, &disp_cfg, &disp_handler);
-    // Verificação do handler
-    if (disp_handler == NULL)
-    {
-        ESP_LOGI(TAG, "Falha na inicialização de handler SSD1306");
-        assert(disp_handler);
-    }
-    ESP_LOGI(TAG, "Iniciando display...");
     for (;;)
     {
-        // Exibição de texto no display
-
         switch (deviceMode)
         {
         case dMode_PROV:
-            ssd1306_clear_display(disp_handler, false);
-            ssd1306_set_contrast(disp_handler, 0xff);
-            ssd1306_display_text_x2(disp_handler, 0, "INICIANDO PROV", false);
-            ssd1306_display_text_x2(disp_handler, 2, "REDE: ESP32-PROVISION", false);
-            ssd1306_display_text_x2(disp_handler, 3, "SENHA: 12345678", false);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            ssd1306_display_text(&disp_cfg, 0, "Provisionamento iniciou!", 16, false);
+            ssd1306_display_text(&disp_cfg, 1, "ESP32-PROVISION", 16, false);
+            ssd1306_display_text(&disp_cfg, 2, "12345678", 16, false);
+
+            vTaskDelay(pdMS_TO_TICKS(500));
             break;
         case dMode_STA:
-            ssd1306_clear_display(disp_handler, false);
-            ssd1306_set_contrast(disp_handler, 0xff);
-            ssd1306_display_text_x2(disp_handler, 0, "CONECTADO A REDE WI-FI: ", false);
-            ssd1306_display_text_x2(disp_handler, 3, net_ssid_buff, false);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            ssd1306_display_text(&disp_cfg, 0, "CONECTADO EM:", 16, false);
+            ssd1306_display_text(&disp_cfg, 2, net_ssid_buff, 16, false);
+
+            vTaskDelay(pdMS_TO_TICKS(500));
             break;
         case dMode_MODBUS:
-            ssd1306_clear_display(disp_handler, false);
-            ssd1306_set_contrast(disp_handler, 0xff);
-            ssd1306_display_text_x2(disp_handler, 0, "MODBUS ABERTO EM: ", false);
-            ssd1306_display_text_x2(disp_handler, 2, device_ip_buff, false);
-            ssd1306_display_text_x2(disp_handler, 4, "PORTA: 502", false);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            ssd1306_display_text(&disp_cfg, 0, "Modbus Iniciado em:", 16, false);
+            ssd1306_display_text(&disp_cfg, 2, device_ip_buff, 16, false);
+            ssd1306_display_text(&disp_cfg, 3, "PORTA: 502", 16, false);
+
+            vTaskDelay(pdMS_TO_TICKS(500));
             break;
         default:
-            ssd1306_clear_display(disp_handler, false);
-            ssd1306_set_contrast(disp_handler, 0xff);
-            ssd1306_display_text_x3(disp_handler, 16, "###INICIANDO###", false);
-            vTaskDelay(pdMS_TO_TICKS(1000));
+            ssd1306_display_text(&disp_cfg, 4, "INICIANDO...", 16, false);
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
 }
 
+// Funçao do modbus
 void modbus_tcp_slave_init(void *pvParams)
 {
 
@@ -166,16 +163,19 @@ void modbus_tcp_slave_init(void *pvParams)
 
     for (;;)
     {
-
-        (void)mbc_slave_lock(mb_slave_handler);
         hydrosensor_read_pressure();
-        holding_reg[0] = hydrosensor_read_height(); // Leitura do sensor de pressão
-        discr_in[0] = gpio_get_level(GPIO_NUM_18);  // Leitura das boias
-        discr_in[1] = gpio_get_level(GPIO_NUM_19);
+        float analog = hydrosensor_read_height();
+        int sw_in_1 = gpio_get_level(GPIO_NUM_2);
+        int sw_in_2 = gpio_get_level(GPIO_NUM_4);
+        (void)mbc_slave_lock(mb_slave_handler);
+
+        holding_reg[0] = analog; // Leitura do sensor de pressão
+        discr_in[0] = sw_in_1;   // Leitura das boias
+        discr_in[1] = sw_in_2;
         (void)mbc_slave_unlock(mb_slave_handler);
 
         // Leitura do botao de reset do provisionamento
-        if (gpio_get_level(GPIO_NUM_21) == 0) // Quando é pressionado, retorna LOW (pull-up)
+        if (gpio_get_level(GPIO_NUM_18) == 0) // Quando é pressionado, retorna LOW (pull-up)
         {
             ESP_LOGI(TAG, "Dispositivo reiniciando...\n");
             vTaskDelay(pdMS_TO_TICKS(3000));
@@ -215,9 +215,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         // Passa o ip do dispositivo para um buffer
         snprintf(device_ip_buff, sizeof(device_ip_buff), "%s", device_ip_addr_str);
         ESP_LOGI(TAG, "%s", device_ip_buff);
-
-        // netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
-        // vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -265,7 +262,6 @@ void start_wifi_prov()
 
     const char *ap_service_name = "ESP32-PROVISION";
     const char *ap_service_key = "12345678";
-    // const char *ap_pop = "12345678";
 
     bool provisioned = false;
 
@@ -283,25 +279,15 @@ void start_wifi_prov()
         ESP_LOGI(TAG, "Dispositivo já provisionado. Conectando à rede wireless...");
 
         vTaskDelay(pdMS_TO_TICKS(10000));
-        // deviceMode = dMode_STA;
+        deviceMode = dMode_STA;
 
         // Obtém o SSID da rede conectada e passa para um buffer
         wifi_config_t wifi_cfg;
         esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_cfg);
         sprintf(net_ssid_buff, "Rede:\n%s", (char *)wifi_cfg.sta.ssid);
-        // ESP_LOGI(TAG, "%s", device_ip_buff);
-        // ESP_LOGI(TAG, "%s", device_ip_buff);
-        //  printf("Provisionado, Trocando para STA...");
-        //   modbus_tcp_slave_init();
-        //    ESP_ERROR_CHECK(esp_wifi_connect());
+
     }
 }
-
-/*static esp_err_t mbc_slave_callback(mb_event_group_t event, void *arg)
-{
-    ESP_LOGI(TAG, "Eventos modbus: %d", event);
-    return ESP_OK;
-}*/
 
 void app_main(void)
 {
@@ -309,27 +295,19 @@ void app_main(void)
     hydrosensor_init(ADC1_CHANNEL_4);
     // Configura e inicializa as boais digitais
     gpio_config_t sw_cfg = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_18) | (1ULL << GPIO_NUM_19),
+        .pin_bit_mask = (1ULL << GPIO_NUM_2) | (1ULL << GPIO_NUM_4) | (1ULL << GPIO_NUM_18),
         .mode = GPIO_MODE_INPUT,               // Configura entradas 18 e 19 para boias
-        .pull_up_en = GPIO_PULLUP_DISABLE,      // Pull-up desabilitado
-        .pull_down_en = GPIO_PULLDOWN_ENABLE, // Pull-down ativado pois será necessário
+        .pull_up_en = GPIO_PULLUP_ENABLE,      // Pull-up habilitado
+        .pull_down_en = GPIO_PULLDOWN_DISABLE, // Pull-down desativado pois nao será necessário
         .intr_type = GPIO_INTR_DISABLE         // Interrupções desabilitadas nestes pinos
     };
     gpio_config(&sw_cfg);
 
-    // Configura e inicializa botao de reset do provisioning
-    gpio_config_t rst_cfg = {
-        .pin_bit_mask = (1ULL << GPIO_NUM_21), // Pino 21 como conexão de entrada do botao
-        .mode = GPIO_MODE_INPUT,               // Configura como entrada
-        .pull_up_en = GPIO_PULLUP_ENABLE,      // Pull-up ativado
-        .pull_down_en = GPIO_PULLDOWN_DISABLE, // Pull-down desabilitado
-        .intr_type = GPIO_INTR_DISABLE         // Interrupções desabilitadas
-    };
-    gpio_config(&rst_cfg);
-    //  Inicia o display
-    xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048, NULL, DISP_TASK_PRIORITY, NULL);
+    nvs_flash_erase();
     //  Inicia o provisionamento
     start_wifi_prov();
+    //  Inicia o display
+    xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048 * 2, NULL, DISP_TASK_PRIORITY, NULL);
     //  Inicia o processo modbus
-    xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 5, NULL, MB_TSK_PRIORITY, NULL);
+    xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 4, NULL, MB_TSK_PRIORITY, NULL);
 }
