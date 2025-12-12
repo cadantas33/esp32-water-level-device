@@ -17,6 +17,7 @@
 #include "wifi_provisioning/manager.h"
 #include "wifi_provisioning/scheme_softap.h"
 
+<<<<<<< HEAD
 #include "mbcontroller.h"
 #include "hydrosensor.h"
 #include "ssd1306.h"
@@ -26,6 +27,13 @@
 #define I2C_SDA 21
 #define I2C_SCL 22
 // Prioridade de tasks
+=======
+#define I2C_SDA 16
+#define I2C_SCL 17
+// #define SWITCH_PIN_1 GPIO_NUM_18 // Definição das bóias como pinos digitais 18 e 19
+// #define SWITCH_PIN_2 GPIO_NUM_19
+// #define SENSOR_CHANNEL ADC1_CHANNEL_0 // Definição do sensor como pino analógico 32
+>>>>>>> da6af2a2fa3df96001c51e3d061a7c02d33731c1
 #define PROV_TSK_PRIORITY 2
 #define MB_TSK_PRIORITY 1
 #define DISP_TASK_PRIORITY 3
@@ -309,5 +317,10 @@ void app_main(void)
     //  Inicia o display
     xTaskCreate(ssd1306_display_service, "DISPLAY_TASK", 2048 * 2, NULL, DISP_TASK_PRIORITY, NULL);
     //  Inicia o processo modbus
+<<<<<<< HEAD
     xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 4, NULL, MB_TSK_PRIORITY, NULL);
 }
+=======
+    xTaskCreate(modbus_tcp_slave_init, "MB_SLAVE_TASK", 1024 * 5, NULL, MB_TSK_PRIORITY, NULL);
+}
+>>>>>>> da6af2a2fa3df96001c51e3d061a7c02d33731c1
