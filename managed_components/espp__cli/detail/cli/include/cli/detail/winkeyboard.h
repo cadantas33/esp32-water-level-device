@@ -59,7 +59,7 @@ public:
         events[1] = GetStdHandle(STD_INPUT_HANDLE); // Get a Windows handle to the keyboard input
     }
 
-    void WaitKbHit()
+    bool WaitKbHit()
     {
         // Wait for either the timer to expire or a key press event
         DWORD dwResult = WaitForMultipleObjects(2, events, false, INFINITE);
@@ -68,21 +68,23 @@ public:
         {
             // TODO
             assert(false);
+            return false;
         }
         else
         {
             if (dwResult == WAIT_OBJECT_0) // WAIT_OBJECT_0 corresponds to the stop event
             {
-                throw std::runtime_error("InputSource stop");
+                return false;
             }
             else
             {
-                return;
+                return true;
             }
         }
 
         // we can't reach this point
         assert(false);
+        return false;
     }
 
     void Stop()
@@ -114,23 +116,17 @@ private:
 
     void Read() noexcept
     {
-        try
+        while (true)
         {
-            while (true)
-            {
-                auto k = Get();
-                Notify(k);
-            }
-        }
-        catch (const std::exception&)
-        {
-            // nothing to do: just exit
+            auto k = Get();
+            Notify(k);
+            if (k.first == KeyType::eof) break;
         }
     }
 
     std::pair<KeyType, char> Get()
     {
-        is.WaitKbHit();
+        if (!is.WaitKbHit()) return std::make_pair(KeyType::eof, ' ');
 
         int c = _getch();
         switch (c)
@@ -159,6 +155,9 @@ private:
             }
             case 8:
                 return std::make_pair(KeyType::backspace, c);
+                break;
+            case 12: // CTRL-L
+                return std::make_pair(KeyType::clear, ' ');
                 break;
             case 13:
                 return std::make_pair(KeyType::ret, c);

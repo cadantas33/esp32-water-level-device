@@ -9,11 +9,11 @@ maintainers:
 - William Emfinger <waemfinger@gmail.com>
 repository: git://github.com/esp-cpp/espp.git
 repository_info:
-  commit_sha: 578972c307a99a8a1d9fc7ef2fe5ea6f2dc04e59
+  commit_sha: c7e68b25183487da21ea1e8939a2a9fc8f6e436d
   path: components/logger
 tags:
 - cpp
 - Component
 - Logging
 url: https://github.com/esp-cpp/espp/tree/main/components/logger
-version: 1.0.22
+version: 1.0.32

@@ -50,6 +50,14 @@ class VolatileHistoryStorage : public HistoryStorage
                     commands.begin()+static_cast<dt>(commands.size()-maxSize)
                 );
         }
+        void SetMaxSize(size_t size) override
+        {
+            if (size < 1)
+                size = 1;
+            if (size < maxSize && commands.size() > size)
+                commands.erase(commands.begin(), commands.begin() + static_cast<std::deque<std::string>::difference_type>(commands.size() - size));
+            const_cast<std::size_t&>(maxSize) = size;
+        }
         std::vector<std::string> Commands() const override
         {
             return std::vector<std::string>(commands.begin(), commands.end());

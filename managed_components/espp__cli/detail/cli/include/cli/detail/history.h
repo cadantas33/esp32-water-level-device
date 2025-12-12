@@ -48,6 +48,17 @@ public:
 
     explicit History(std::size_t size) : maxSize(size) {}
 
+    void SetMaxSize(std::size_t size) {
+        if (size < 1)
+            return;
+        while (buffer.size() > size)
+        {
+            buffer.pop_back();
+            ++idOfOldest;
+        }
+        maxSize = size;
+    }
+
     // Insert a new item in the buffer, changing the current state to "inserting"
     // If we're browsing the history (eg with arrow keys) the new item overwrites
     // the current one.
@@ -111,9 +122,13 @@ public:
     // Show the whole history on the given ostream
     void Show(std::ostream& out) const
     {
+        const auto size = buffer.size();
         out << '\n';
-        for (auto& item: buffer)
-            out << item << '\n';
+        for (std::size_t i = 0; i < size; ++i)
+        {
+            const auto j = size-1-i;
+            out << IndexToId(j) << '\t' << buffer[j] << '\n';
+        }
         out << '\n' << std::flush;
     }
 
@@ -142,21 +157,54 @@ public:
         return result;
     }
 
+    std::string At(std::size_t id) const
+    {
+        std::size_t index = IdToIndex(id);
+        assert(index < buffer.size());
+        return buffer[index];
+    }
+
+    void ForgetLatest()
+    {
+        assert(!buffer.empty());
+        buffer.pop_front();
+    }
+
 private:
+
+    // oldest has index = size-1 and id = idOfOldest
+    // newest has index = 0      and id = idOfOldest + size-1 
+    std::size_t IndexToId(std::size_t index) const
+    {
+        if (index > idOfOldest+buffer.size()-1)
+            return idOfOldest; // clamp
+        return idOfOldest + buffer.size() - 1 - index;
+    }
+
+    std::size_t IdToIndex(std::size_t id) const
+    {
+        if (id < idOfOldest || id > idOfOldest+buffer.size()-1)
+            return (buffer.size() ? buffer.size()-1 : 0); // clamp to newest
+        return idOfOldest + buffer.size() - 1 - id;
+    }
 
     void Insert(const std::string& item)
     {
-        buffer.push_front(item);
+        buffer.emplace_front(item);
         if (buffer.size() > maxSize)
+        {
             buffer.pop_back();
+            ++idOfOldest;
+        }
     }
 
-    const std::size_t maxSize;
-    std::deque<std::string> buffer;
+    std::size_t maxSize;
+    std::deque<std::string> buffer; // buffer[0] is the newest element
     std::size_t current = 0;
     std::size_t commands = 0; // number of commands issued
     enum class Mode { inserting, browsing };
     Mode mode = Mode::inserting;
+    std::size_t idOfOldest = 0; // the id of the oldest element kept in the history
 };
 
 } // namespace detail

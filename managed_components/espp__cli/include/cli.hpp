@@ -3,8 +3,6 @@
 #if defined(ESP_PLATFORM)
 #include <sdkconfig.h>
 
-#if CONFIG_COMPILER_CXX_EXCEPTIONS || defined(_DOXYGEN_)
-
 #define __linux__
 
 #include "driver/uart.h"
@@ -13,15 +11,13 @@
 #include "driver/usb_serial_jtag_vfs.h"
 #include "esp_err.h"
 #include "esp_system.h"
+#include <fcntl.h>
 
+#include "esp_vfs_cdcacm.h"
 #include "esp_vfs_dev.h"
 #include "esp_vfs_usb_serial_jtag.h"
 
 #include "line_input.hpp"
-
-#ifdef CONFIG_ESP_CONSOLE_USB_CDC
-#error The cli component is currently incompatible with CONFIG ESP_CONSOLE_USB_CDC console.
-#endif // CONFIG_ESP_CONSOLE_USB_CDC
 
 #ifndef STRINGIFY
 #define STRINGIFY(s) STRINGIFY2(s)
@@ -40,9 +36,9 @@ namespace espp {
  *
  * @note You should call configure_stdin_stdout() before creating a Cli object
  *       to ensure that std::cin works as needed. If you do not want to use the
- *       Cli over the ESP CONSOLE (e.g. the ESP's UART, USB Serial/JTAG) and
- *       instead want to run it over a different UART port, VFS, or some other
- *       configuration, then you should call one of
+ *       Cli over the ESP CONSOLE (e.g. the ESP's UART, USB Serial/JTAG, USB
+ *       CDC) and instead want to run it over a different UART port, VFS, or
+ *       some other configuration, then you should call one of
  *       - configure_stdin_stdout_uart()
  *       - configure_stdin_stdout_vfs()
  *       - configure_stdin_stdout_custom()
@@ -60,6 +56,7 @@ public:
    *       compiled to use. This will only work if the ESP_CONSOLE was
    *       configured to use one of the following:
    *       - CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+   *       - CONFIG_ESP_CONSOLE_USB_CDC
    *       - CONFIG_ESP_CONSOLE_UART
    *
    *       If you want to use a different console, you should use one of the
@@ -79,6 +76,8 @@ public:
 
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     configure_stdin_stdout_usb_serial_jtag();
+#elif CONFIG_ESP_CONSOLE_USB_CDC
+    configure_stdin_stdout_usb_cdc();
 #elif CONFIG_ESP_CONSOLE_UART
     configure_stdin_stdout_uart((uart_port_t)CONFIG_ESP_CONSOLE_UART_NUM,
                                 CONFIG_ESP_CONSOLE_UART_BAUDRATE);
@@ -185,6 +184,47 @@ public:
   }
 
   /**
+   * @brief Configure the USB CDC driver to support blocking input read, so
+   *        that std::cin (which assumes a blocking read) will function. This
+   *        should be primarily used when you want to use the std::cin/std::getline
+   *        and other std input functions or you want to use the cli library.
+   */
+  static void configure_stdin_stdout_usb_cdc(void) {
+    if (configured_) {
+      return;
+    }
+
+    // drain stdout before reconfiguring it
+    fflush(stdout);
+    fsync(fileno(stdout));
+
+    const std::string_view dev_name = "/dev/cdcacm";
+
+    // redirect stdin, stdout, stderr to the USB CDC interface
+    console_.in = freopen(dev_name.data(), "r", stdin);
+    console_.out = freopen(dev_name.data(), "w", stdout);
+    console_.err = freopen(dev_name.data(), "w", stderr);
+
+    esp_vfs_dev_cdcacm_register();
+
+    esp_vfs_dev_cdcacm_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
+    esp_vfs_dev_cdcacm_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
+
+    // Enable blocking mode on stdin and stdout
+    fcntl(fileno(stdout), F_SETFL, 0);
+    fcntl(fileno(stdin), F_SETFL, 0);
+
+    // Initialize VFS & UART so we can use std::cout/cin
+    // _IOFBF = full buffering
+    // _IOLBF = line buffering
+    // _IONBF = no buffering
+    // disable buffering on stdin
+    setvbuf(stdin, nullptr, _IONBF, 0);
+
+    configured_ = true;
+  }
+
+  /**
    * @brief Configure stdin/stdout to use a custom VFS driver. This should be
    *        used when you have a custom VFS driver that you want to use for
    *        std::cin/std::cout, such as when using TinyUSB CDC.
@@ -220,8 +260,6 @@ public:
     // Register the USB CDC interface
     [[maybe_unused]] auto err = esp_vfs_register(dev_name.data(), &vfs, NULL);
 
-    // TODO: this function is mostly untested, so we should probably add some
-    //       error handling here and store the resultant pointers for later use
     // redirect stdin, stdout, stderr to the USB CDC interface
     console_.in = freopen(dev_name.data(), "r", stdin);
     console_.out = freopen(dev_name.data(), "w", stdout);
@@ -283,7 +321,6 @@ public:
    * @brief Construct a Cli object and call
    *        espp::Cli::configure_stdin_stdout() to ensure that std::cin works
    *        as needed.
-   * @throw std::invalid_argument if @c _in or @c out are invalid streams
    * @param _cli the cli::Cli object containing the menus and functions to
    *        run.
    * @param _in The input stream from which to read characters.
@@ -293,10 +330,8 @@ public:
       : CliSession(_cli, _out, 1)
       , exit(false)
       , in(_in) {
-    if (!_in.good())
-      throw std::invalid_argument("istream invalid");
-    if (!_out.good())
-      throw std::invalid_argument("ostream invalid");
+    if (!_in.good() || !_out.good())
+      exit = true;
     ExitAction([this](std::ostream &) { exit = true; });
     // for std::cin to work (it must be blocking), we need to configure the uart
     // driver to have it block. see
@@ -308,7 +343,10 @@ public:
    * @brief Set the input history size for this session.
    * @param history_size new History size. Must be >= 1.
    */
-  void SetInputHistorySize(size_t history_size) { line_input_.set_history_size(history_size); }
+  void SetInputHistorySize(size_t history_size) {
+    line_input_.set_history_size(history_size);
+    SetHistoryMaxSize(history_size);
+  }
 
   /**
    * @brief Set the input history - replaces any existing history.
@@ -390,7 +428,5 @@ private:
   std::istream &in;
 };
 } // namespace espp
-
-#endif // CONFIG_COMPILER_CXX_EXCEPTIONS
 
 #endif // ESP_PLATFORM

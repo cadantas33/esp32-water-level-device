@@ -38,7 +38,7 @@
 #include <unistd.h>
 #include <sys/select.h>
 #include <cassert>
-
+#include <condition_variable>
 #include "inputdevice.h"
 
 
@@ -61,28 +61,29 @@ public:
         }
     }
 
-    void WaitKbHit()
+    bool WaitKbHit()
     {
         fd_set rfds;
         FD_ZERO(&rfds);
         FD_SET(STDIN_FILENO, &rfds);
         FD_SET(readPipe, &rfds);
 
-        while (select(readPipe + 1, &rfds, nullptr, nullptr, nullptr) == 0);
+        while (select(readPipe + 1, &rfds, nullptr, nullptr, nullptr) == 0) {}
 
         if (FD_ISSET(readPipe, &rfds)) // stop called
         {
             close(readPipe);
-            throw std::runtime_error("InputSource stop");
+            return false;
         }
 
         if (FD_ISSET(STDIN_FILENO, &rfds)) // char from stdinput
         {
-            return;
+            return true;
         }
 
         // cannot reach this point
         assert(false);
+        return false;
     }
 
     void Stop()
@@ -100,15 +101,15 @@ private:
 
 //
 
-
 class LinuxKeyboard : public InputDevice
 {
 public:
     explicit LinuxKeyboard(Scheduler& _scheduler) :
         InputDevice(_scheduler),
+        enabled(false),
         servant( [this]() noexcept { Read(); } )
     {
-        ToManualMode();
+        ActivateInputImpl();
     }
     ~LinuxKeyboard() override
     {
@@ -116,22 +117,39 @@ public:
         is.Stop();
         servant.join();
     }
+    void ActivateInput() override
+    {
+        ActivateInputImpl();
+    }
+    void DeactivateInput() override
+    {
+        ToStandardMode();
+        std::lock_guard<std::mutex> lock(mtx);
+        enabled = false;
+    }
+    
+    private:
 
-private:
+    // we need a private non virtual method to call from the constructor
+    void ActivateInputImpl()
+    {
+        ToManualMode();
+        std::lock_guard<std::mutex> lock(mtx);
+        enabled = true;
+        cv.notify_one();
+    }
 
     void Read() noexcept
     {
-        try
+        while (true)
         {
-            while (true)
             {
-                auto k = Get();
-                Notify(k);
+                std::unique_lock<std::mutex> lock(mtx);
+                cv.wait(lock, [this]{ return enabled; }); // release mtx, suspend thread execution until enabled becomes true
             }
-        }
-        catch(const std::exception&)
-        {
-            // nothing to do: just exit
+            if (!is.WaitKbHit()) break;
+            auto k = Get();
+            Notify(k);
         }
     }
 
@@ -145,7 +163,7 @@ private:
 
     std::pair<KeyType,char> Get()
     {
-        is.WaitKbHit();
+        if (!is.WaitKbHit()) return std::make_pair(KeyType::eof,' ');
 
         auto ch = GetChar();
         switch(ch)
@@ -158,6 +176,7 @@ private:
             case 8:
                 return std::make_pair(KeyType::backspace,' '); break;
             case 10: return std::make_pair(KeyType::ret,' '); break;
+            case 12: return std::make_pair(KeyType::clear, ' '); break;
             case 27: // symbol
                 ch = GetChar();
                 if ( ch == 91 ) // arrow keys
@@ -205,9 +224,12 @@ private:
         tcsetattr(STDIN_FILENO, TCSANOW, &oldt);
     }
 
+    bool enabled;
     termios oldt;
     termios newt;
     InputSource is;
+    std::mutex mtx;
+    std::condition_variable cv;
     std::thread servant;
 };
 
@@ -215,4 +237,5 @@ private:
 } // namespace cli
 
 #endif // CLI_DETAIL_LINUXKEYBOARD_H_
+
 

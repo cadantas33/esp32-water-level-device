@@ -115,7 +115,6 @@ namespace cli
     class Cli
     {
 
-
     public:
         ~Cli() = default;
         // disable value semantics
@@ -137,13 +136,7 @@ namespace cli
          * 
          * However, you can develop your own, just derive a class from @c HistoryStorage .
          */
-        Cli(std::unique_ptr<Menu> _rootMenu, std::unique_ptr<HistoryStorage> historyStorage = std::make_unique<VolatileHistoryStorage>()) :
-            globalHistoryStorage(std::move(historyStorage)),
-            rootMenu(std::move(_rootMenu)),
-            enterAction{},
-            exitAction{}
-        {
-        }
+        Cli(std::unique_ptr<Menu> _rootMenu, std::unique_ptr<HistoryStorage> historyStorage = std::make_unique<VolatileHistoryStorage>());
 
         /**
          * @brief Add a global enter action that is called every time a session (local or remote) is established.
@@ -163,12 +156,24 @@ namespace cli
          * @brief Add an handler that will be called when a @c std::exception (or derived) is thrown inside a command handler.
          * If an exception handler is not set, the exception will be logget on the session output stream.
          * 
-         * @param handler the function to be called when an exception is thrown, taking a @c std::ostream& parameter to write on that session console
-         * and the exception thrown.
+         * @param handler the function to be called when an exception is thrown, taking a @c std::ostream& parameter to write on that session console,
+         * the command entered and the exception thrown.
          */
         void StdExceptionHandler(const std::function< void(std::ostream&, const std::string& cmd, const std::exception&) >& handler)
         {
             exceptionHandler = handler;
+        }
+
+        /**
+         * @brief Add an handler that will be called when the user enter a wrong command (not existing command or having wrong parameters).
+         * If an handler is not set, the library will print the message "wrong command" on the console.
+         * 
+         * @param handler the function to be called when the user enter a wrong command, taking a @c std::ostream& parameter to write on that session console
+         * and the command entered.
+         */
+        void WrongCommandHandler(const std::function< void(std::ostream&, const std::string& cmd) >& handler)
+        {
+            wrongCmdHandler = handler;
         }
 
         /**
@@ -206,10 +211,19 @@ namespace cli
 
         void StdExceptionHandler(std::ostream& out, const std::string& cmd, const std::exception& e)
         {
+            // Exceptions may be disabled at build time; keep a no-op fallback
             if (exceptionHandler)
                 exceptionHandler(out, cmd, e);
             else
-                out << e.what() << '\n';
+                out << "error handling command: " << cmd << '\n';
+        }
+
+        void WrongCommandHandler(std::ostream& out, const std::string& cmd)
+        {
+            if (wrongCmdHandler)
+                wrongCmdHandler(out, cmd);
+            else
+                out << "wrong command: " << cmd << '\n';
         }
 
         void StoreCommands(const std::vector<std::string>& cmds)
@@ -228,6 +242,7 @@ namespace cli
         std::function<void(std::ostream&)> enterAction;
         std::function<void(std::ostream&)> exitAction;
         std::function<void(std::ostream&, const std::string& cmd, const std::exception& )> exceptionHandler;
+        std::function<void(std::ostream&, const std::string& cmd)> wrongCmdHandler;
     };
 
     // ********************************************************************
@@ -294,7 +309,7 @@ namespace cli
     {
     public:
         CliSession(Cli& _cli, std::ostream& _out, std::size_t historySize = 100);
-        virtual ~CliSession() noexcept { coutPtr->UnRegister(out); }
+        virtual ~CliSession() noexcept;
 
         // disable value semantics
         CliSession(const CliSession&) = delete;
@@ -344,6 +359,15 @@ namespace cli
 
         void ShowHistory() const { history.Show(out); }
 
+        void SetHistoryMaxSize(std::size_t size) { history.SetMaxSize(size); }
+
+        void ExecFromHistory(unsigned index)
+        {
+            history.ForgetLatest();
+            const auto cmd = history.At(index);
+            Feed(cmd);
+        }
+
         std::string PreviousCmd(const std::string& line)
         {
             return history.Previous(line);
@@ -363,8 +387,8 @@ namespace cli
         Menu* current;
         std::unique_ptr<Menu> globalScopeMenu;
         std::ostream& out;
-        std::function< void(std::ostream&)> enterAction = []( std::ostream& ){};
-        std::function< void(std::ostream&)> exitAction = []( std::ostream& ){};
+        std::function< void(std::ostream&)> enterAction = []( std::ostream& ) noexcept {};
+        std::function< void(std::ostream&)> exitAction = []( std::ostream& ) noexcept {};
         detail::History history;
         bool exit{ false }; // to prevent the prompt after exit command
     };
@@ -433,8 +457,12 @@ namespace cli
 
         Menu() : Command({}), parent(nullptr), description(), cmds(std::make_shared<Cmds>()) {}
 
-        explicit Menu(const std::string& _name, std::string  desc = "(menu)") :
-            Command(_name), parent(nullptr), description(std::move(desc)), cmds(std::make_shared<Cmds>())
+        explicit Menu(const std::string& _name, std::string desc = "(menu)", const std::string& _prompt="") :
+            Command(_name),
+            parent(nullptr),
+            description(std::move(desc)),
+            prompt(_prompt.empty() ? _name : _prompt),
+            cmds(std::make_shared<Cmds>())
         {}
 
         template <typename R, typename ... Args>
@@ -473,24 +501,12 @@ namespace cli
 
         bool Exec(const std::vector<std::string>& cmdLine, CliSession& session) override
         {
-            if (!IsEnabled())
-                return false;
-            if (cmdLine[0] == Name())
-            {
-                if (cmdLine.size() == 1)
-                {
-                    session.Current(this);
-                    return true;
-                }
-                else
-                {
-                    // check also for subcommands
-                    std::vector<std::string > subCmdLine(cmdLine.begin()+1, cmdLine.end());
-                    for (auto& cmd: *cmds)
-                        if (cmd->Exec( subCmdLine, session )) return true;
-                }
-            }
-            return false;
+            return HandleCommand({Name()}, cmdLine, session);
+        }
+
+        bool ExecParent(const std::vector<std::string>& cmdLine, CliSession& session)
+        {
+            return HandleCommand({Name(), ParentShortcut()}, cmdLine, session);
         }
 
         bool ScanCmds(const std::vector<std::string>& cmdLine, CliSession& session)
@@ -500,12 +516,13 @@ namespace cli
             for (auto& cmd: *cmds)
                 if (cmd->Exec(cmdLine, session))
                     return true;
-            return (parent && parent->Exec(cmdLine, session));
+            assert(!cmdLine.empty());
+            return (parent && parent->ExecParent(cmdLine, session));
         }
 
         std::string Prompt() const
         {
-            return Name();
+            return prompt;
         }
 
         void MainHelp(std::ostream& out)
@@ -532,36 +549,141 @@ namespace cli
             auto result = cli::GetCompletions(cmds, currentLine);
             if (parent != nullptr)
             {
-                auto c = parent->GetCompletionRecursive(currentLine);
+                auto c = parent->GetCompletionWithParent(currentLine);
                 result.insert(result.end(), std::make_move_iterator(c.begin()), std::make_move_iterator(c.end()));
             }
             return result;
         }
 
-        // returns:
-        // - the completion of this menu command
-        // - the recursive completions of the subcommands
+        /**
+         * Retrieves completion suggestions for the user input recursively.
+         *
+         * This function checks if the user input starts with the current command's name. If it
+         * does, it extracts the remaining part of the input and retrieves suggestions:
+         *   - From subcommands using their `GetCompletionRecursive` function.
+         *   - From the parent command (if available) using its `GetCompletionRecursiveFull` function.
+         *   - (Optional) You can customize the behavior for empty lines to provide top-level commands.
+         *
+         * If the input doesn't start with the command name, it delegates to the base class's
+         * `Command::GetCompletionRecursive` function for handling generic commands.
+         *
+         * @param line The user's input string (potentially incomplete command).
+         * @return A vector containing suggested completions for the user input.
+         */
         std::vector<std::string> GetCompletionRecursive(const std::string& line) const override
         {
             if (line.rfind(Name(), 0) == 0) // line starts_with Name()
             {
-                auto rest = line;
-                rest.erase(0, Name().size());
-                // trim_left(rest);
-                rest.erase(rest.begin(), std::find_if(rest.begin(), rest.end(), [](int ch) { return !std::isspace(ch); }));
-                std::vector<std::string> result;
-                for (const auto& cmd: *cmds)
-                {
-                    auto cs = cmd->GetCompletionRecursive(rest);
-                    for (const auto& c: cs)
-                        result.push_back(Name() + ' ' + c); // concat submenu with command
-                }
-                return result;
+                return GetCompletionRecursiveHelper(line, Name());
             }
+
             return Command::GetCompletionRecursive(line);
         }
 
     private:
+
+        /**
+         * Retrieves completion suggestions for the user input recursively, including the parent command.
+         *
+         * This function is similar to `GetCompletionRecursive` but explicitly includes
+         * completions from the parent command (if available) using its `GetCompletionRecursiveFull` function.
+         * This allows navigation within the command hierarchy using "..".
+         *
+         * The rest of the functionality remains the same as `GetCompletionRecursive`.
+         *
+         * @param line The user's input string (potentially incomplete command).
+         * @return A vector containing suggested completions for the user input.
+         */
+        std::vector<std::string> GetCompletionWithParent(const std::string& line) const
+        {
+            if (line.rfind(Name(), 0) == 0) // line starts_with Name()
+            {
+                return GetCompletionRecursiveHelper(line, Name());
+            }
+
+            if (line.rfind(ParentShortcut(), 0) == 0) // line starts_with ..
+            {
+                return GetCompletionRecursiveHelper(line, ParentShortcut());
+            }
+
+            return Command::GetCompletionRecursive(line);
+        }
+
+        std::vector<std::string> GetCompletionRecursiveHelper(const std::string& line, const std::string& prefix) const
+        {
+            auto rest = line;
+            rest.erase(0, prefix.size());
+            // trim_left(rest);
+            rest.erase(rest.begin(), std::find_if(rest.begin(), rest.end(), [](int ch) { return !std::isspace(ch); }));
+            std::vector<std::string> result;
+            for (const auto& cmd: *cmds)
+            {
+                auto cs = cmd->GetCompletionRecursive(rest);
+                for (const auto& c: cs)
+                    result.push_back(prefix + ' ' + c); // concat submenu with command
+            }
+            if (parent != nullptr)
+            {
+                auto cs = parent->GetCompletionWithParent(rest);
+                for (const auto& c: cs)
+                    result.push_back(prefix + ' ' + c); // concat submenu with command
+            }
+            return result;
+        }
+
+        /**
+         * Handles a command from the user input.
+         *
+         * This function checks if the first element of the `cmdLine` vector matches any of the
+         * valid commands listed in `cmdNames`. If it does, it performs the following actions:
+         *   - If the `cmdLine` is of length 1 (only the command itself), it sets the current
+         *     session to this object (`session.Current(this)`) and returns true.
+         *   - If the `cmdLine` is longer (includes subcommands), it iterates through registered
+         *     subcommands (`*cmds`) and calls their `Exec` function with the subcommand arguments
+         *     (`subCmdLine`) and the session (`session`). If any subcommand successfully handles
+         *     the command, it returns true.
+         *   - If no subcommand handles the command and a parent object (`parent`) is set, it
+         *     calls the parent's `ExecParent` function with the subcommand arguments and the
+         *     session.
+         *
+         * The function returns false if the command is not found, not enabled, or no subcommand or
+         * parent can handle it.
+         *
+         * @param cmdNames  - List of valid command names.
+         * @param cmdLine   - User input divided into tokens (command and arguments).
+         * @param session   - Reference to the current CliSession object.
+         * @return true if the command is handled successfully, false otherwise.
+         */
+        bool HandleCommand(const std::vector<std::string>& cmdNames, const std::vector<std::string>& cmdLine, CliSession& session)
+        {
+            if (!IsEnabled())
+                return false;
+
+            assert(!cmdLine.empty());
+
+            if (std::find(cmdNames.begin(), cmdNames.end(), cmdLine[0]) != cmdNames.end())
+            {
+                if (cmdLine.size() == 1)
+                {
+                    session.Current(this);
+                    return true;
+                }
+                else
+                {
+                    // check also for subcommands
+                    std::vector<std::string > subCmdLine(cmdLine.begin()+1, cmdLine.end());
+                    for (auto& cmd: *cmds)
+                        if (cmd->Exec( subCmdLine, session )) return true;
+                    return (parent && parent->ExecParent(subCmdLine, session));
+                }
+            }
+            return false;
+        }
+
+        static std::string ParentShortcut()
+        {
+            return "..";
+        }
 
         template <typename F, typename R, typename ... Args>
         CmdHandler Insert(const std::string& name, const std::string& help, const std::vector<std::string>& parDesc, F& f, R (F::*)(std::ostream& out, Args...) const);
@@ -574,6 +696,7 @@ namespace cli
 
         Menu* parent{ nullptr };
         const std::string description;
+        const std::string prompt;
         // using shared_ptr instead of unique_ptr to get a weak_ptr
         // for the CmdHandler::Descriptor
         using Cmds = std::vector<std::shared_ptr<Command>>;
@@ -589,13 +712,15 @@ namespace cli
     struct Select<P, Args...>
     {
         template <typename F, typename InputIt>
-        static void Exec(const F& f, InputIt first, InputIt last)
+        static bool Exec(const F& f, InputIt first, InputIt last)
         {
             assert( first != last );
             assert( std::distance(first, last) == 1+sizeof...(Args) );
-            const P p = detail::from_string<typename std::decay<P>::type>(*first);
+            typename std::decay<P>::type p{};
+            if (!detail::from_string<typename std::decay<P>::type>(*first, p))
+                return false;
             auto g = [&](auto ... pars){ f(p, pars...); };
-            Select<Args...>::Exec(g, std::next(first), last);
+            return Select<Args...>::Exec(g, std::next(first), last);
         }
     };
 
@@ -603,7 +728,7 @@ namespace cli
     struct Select<>
     {
         template <typename F, typename InputIt>
-        static void Exec(const F& f, InputIt first, InputIt last)
+        static bool Exec(const F& f, InputIt first, InputIt last)
         {
             // silence the unused warning in release mode when assert is disabled
             static_cast<void>(first);
@@ -612,6 +737,7 @@ namespace cli
             assert(first == last);
             
             f();
+            return true;
         }
     };
 
@@ -661,15 +787,9 @@ namespace cli
             if (cmdLine.size() != paramSize+1) return false;
             if (Name() == cmdLine[0])
             {
-                try
-                {
-                    auto g = [&](auto ... pars){ func( session.OutStream(), pars... ); };
-                    Select<Args...>::Exec(g, std::next(cmdLine.begin()), cmdLine.end());
-                }
-                catch (std::bad_cast&)
-                {
+                auto g = [&](auto ... pars){ func( session.OutStream(), pars... ); };
+                if (!Select<Args...>::Exec(g, std::next(cmdLine.begin()), cmdLine.end()))
                     return false;
-                }
                 return true;
             }
             return false;
@@ -744,6 +864,16 @@ namespace cli
 
     // ********************************************************************
 
+    // Cli implementation
+
+    inline Cli::Cli(std::unique_ptr<Menu> _rootMenu, std::unique_ptr<HistoryStorage> historyStorage) :
+        globalHistoryStorage{std::move(historyStorage)},
+        rootMenu{std::move(_rootMenu)},
+        enterAction{},
+        exitAction{}
+    {
+    }
+
     // CliSession implementation
 
     inline CliSession::CliSession(Cli& _cli, std::ostream& _out, std::size_t historySize) :
@@ -767,13 +897,16 @@ namespace cli
                 [this](std::ostream&){ Exit(); },
                 "Quit the session"
             );
-#ifdef CLI_HISTORY_CMD
             globalScopeMenu->Insert(
                 "history",
                 [this](std::ostream&){ ShowHistory(); },
                 "Show the history"
             );
-#endif
+            globalScopeMenu->Insert(
+                "!", {"history entry index"},
+                [this](std::ostream&, unsigned cmdIndex){ ExecFromHistory(cmdIndex); },
+                "Exec a command by index in the history"
+            );
         }
 
     inline void CliSession::Feed(const std::string& cmd)
@@ -784,28 +917,14 @@ namespace cli
 
         history.NewCommand(cmd); // add anyway to history
 
-        try
-        {
+        // global cmds check
+        bool found = globalScopeMenu->ScanCmds(strs, *this);
 
-            // global cmds check
-            bool found = globalScopeMenu->ScanCmds(strs, *this);
+        // root menu recursive cmds check
+        if (!found) found = current->ScanCmds(strs, *this);
 
-            // root menu recursive cmds check
-            if (!found) found = current->ScanCmds(strs, *this);
-
-            if (!found) // error msg if not found
-                out << "wrong command: " << cmd << '\n';
-        }
-        catch(const std::exception& e)
-        {
-            cli.StdExceptionHandler(out, cmd, e);
-        }
-        catch(...)
-        {
-            out << "Cli. Unknown exception caught handling command line \""
-                << cmd
-                << "\"\n";
-        }
+        if (!found) // wrong command handler if not found
+            cli.WrongCommandHandler(out, cmd);
     }
 
     inline void CliSession::Prompt()
@@ -839,6 +958,11 @@ namespace cli
         v1.resize(static_cast<std::size_t>(std::distance(v1.begin(), ip)));
 
         return v1;
+    }
+
+    inline CliSession::~CliSession() noexcept
+    {
+        coutPtr->UnRegister(out);
     }
 
     // Menu implementation

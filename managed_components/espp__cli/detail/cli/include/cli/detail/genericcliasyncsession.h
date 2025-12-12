@@ -51,7 +51,8 @@ public:
     }
     ~GenericCliAsyncSession() noexcept override
     {
-        try { input.close(); } catch (const std::exception&) { /* do nothing */ }
+        asiolibec::error_code ec;
+        input.close(ec);
     }
 
 private:
@@ -85,7 +86,8 @@ private:
         }
         else
         {
-            input.close();
+            asiolibec::error_code ec;
+            input.close(ec);
         }
     }
 

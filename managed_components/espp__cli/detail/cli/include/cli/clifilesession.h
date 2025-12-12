@@ -32,7 +32,6 @@
 
 #include <string>
 #include <iostream>
-#include <stdexcept> // std::invalid_argument
 #include "cli.h" // CliSession
 
 namespace cli
@@ -41,16 +40,15 @@ namespace cli
 class CliFileSession : public CliSession
 {
 public:
-    /// @throw std::invalid_argument if @c _in or @c out are invalid streams
     explicit CliFileSession(Cli& _cli, std::istream& _in=std::cin, std::ostream& _out=std::cout) :
         CliSession(_cli, _out, 1),
         exit(false),
         in(_in)
     {
-        if (!_in.good()) throw std::invalid_argument("istream invalid");
-        if (!_out.good()) throw std::invalid_argument("ostream invalid");
+        // Validate streams; if invalid, mark exit to prevent Start loop
+        if (!_in.good() || !_out.good()) exit = true;
         ExitAction(
-            [this](std::ostream&)
+            [this](std::ostream&) noexcept
             {
                 exit = true;
             }

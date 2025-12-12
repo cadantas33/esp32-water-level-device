@@ -53,223 +53,213 @@ T from_string(const std::string& s)
 
 #else
 
-#include <exception>
 #include <limits>
 #include <string>
 #include <sstream>
+#include <cctype>
+#include <cstdlib>
 
 namespace cli
 {
 
     namespace detail
     {
-        class bad_conversion : public std::bad_cast
-        {
-            public:
-                const char* what() const noexcept override {
-                    return "bad from_string conversion: "
-                        "source string value could not be interpreted as target";
-                }
-        };
+        enum class parse_errc { ok=0, invalid, overflow };
 
 template <typename T>
-inline T from_string(const std::string& s);
+inline bool from_string(const std::string& s, T& out);
 
 template <>
-inline std::string from_string(const std::string& s)
+inline bool from_string(const std::string& s, std::string& out)
 {
-    return s;
+    out = s;
+    return true;
 }
 
 template <>
-inline std::nullptr_t from_string(const std::string& /*s*/)
+inline bool from_string(const std::string& /*s*/, std::nullptr_t& out)
 {
-    return nullptr;
+    out = nullptr;
+    return true;
 }
 
 namespace detail
 {
 
 template <typename T>
-inline T unsigned_digits_from_string(const std::string& s)
+inline bool unsigned_digits_from_string(const std::string& s, T& result)
 {
     if (s.empty())
-        throw bad_conversion();
-    T result = 0;
+        return false;
+    result = 0;
     for (char c: s)
     {
-        if (!std::isdigit(c))
-            throw bad_conversion();
+        if (!std::isdigit(static_cast<unsigned char>(c)))
+            return false;
         const T digit = static_cast<T>( c - '0' );
         const T tmp = (result * 10) + digit;
         if (result != ((tmp-digit)/10) || (tmp < result))
-            throw bad_conversion();
+            return false;
         result = tmp;
     }
-    return result;
+    return true;
 }
 
 template <typename T>
-inline T unsigned_from_string(std::string s)
+inline bool unsigned_from_string(std::string s, T& out)
 {
     if (s.empty())
-        throw bad_conversion();
+        return false;
     if (s[0] == '+')
     {
         s = s.substr(1);
     }
-    return unsigned_digits_from_string<T>(s);
+    return unsigned_digits_from_string<T>(s, out);
 }
 
 template <typename T>
-inline T signed_from_string(std::string s)
+inline bool signed_from_string(std::string s, T& out)
 {
     if (s.empty())
-        throw bad_conversion();
+        return false;
     using U = std::make_unsigned_t<T>;
     if (s[0] == '-')
     {
         s = s.substr(1);
-        const U val = unsigned_digits_from_string<U>(s);
-        if ( val > static_cast<U>( - std::numeric_limits<T>::min() ) )
-            throw bad_conversion();
-        return (- static_cast<T>(val));
+        U val{};
+        if (!unsigned_digits_from_string<U>(s, val)) return false;
+        auto min = std::numeric_limits<T>::min(); // this to avoid overflow warnings. Please NOTE: const auto produces warning!
+        if ( val > static_cast<U>( - min ) )
+            return false;
+        out = (- static_cast<T>(val));
+        return true;
     }
     else if (s[0] == '+')
     {
         s = s.substr(1);
     }
-    const U val = unsigned_digits_from_string<U>(s);
+    U val{};
+    if (!unsigned_digits_from_string<U>(s, val)) return false;
     if (val > static_cast<U>( std::numeric_limits<T>::max() ))
-        throw bad_conversion();
-    return static_cast<T>(val);
+        return false;
+    out = static_cast<T>(val);
+    return true;
 }
 
 } // namespace detail
 
 // signed
 
-template <> inline signed char 
-from_string(const std::string& s) { return detail::signed_from_string<signed char>(s); }
+template <> inline bool 
+from_string(const std::string& s, signed char& out) { return detail::signed_from_string<signed char>(s, out); }
 
-template <> inline short int 
-from_string(const std::string& s) { return detail::signed_from_string<short int>(s); }
+template <> inline bool 
+from_string(const std::string& s, short int& out) { return detail::signed_from_string<short int>(s, out); }
 
-template <> inline int
-from_string(const std::string& s) { return detail::signed_from_string<int>(s); }
+template <> inline bool
+from_string(const std::string& s, int& out) { return detail::signed_from_string<int>(s, out); }
 
-template <> inline long int
-from_string(const std::string& s) { return detail::signed_from_string<long int>(s); }
+template <> inline bool
+from_string(const std::string& s, long int& out) { return detail::signed_from_string<long int>(s, out); }
 
-template <> inline long long int
-from_string(const std::string& s) { return detail::signed_from_string<long long int>(s); }
+template <> inline bool
+from_string(const std::string& s, long long int& out) { return detail::signed_from_string<long long int>(s, out); }
 
 // unsigned
 
-template <> inline unsigned char
-from_string(const std::string& s) { return detail::unsigned_from_string<unsigned char>(s); }
+template <> inline bool
+from_string(const std::string& s, unsigned char& out) { return detail::unsigned_from_string<unsigned char>(s, out); }
 
-template <> inline unsigned short int
-from_string(const std::string& s) { return detail::unsigned_from_string<unsigned short int>(s); }
+template <> inline bool
+from_string(const std::string& s, unsigned short int& out) { return detail::unsigned_from_string<unsigned short int>(s, out); }
 
-template <> inline unsigned int
-from_string(const std::string& s) { return detail::unsigned_from_string<unsigned int>(s); }
+template <> inline bool
+from_string(const std::string& s, unsigned int& out) { return detail::unsigned_from_string<unsigned int>(s, out); }
 
-template <> inline unsigned long int
-from_string(const std::string& s) { return detail::unsigned_from_string<unsigned long int>(s); }
+template <> inline bool
+from_string(const std::string& s, unsigned long int& out) { return detail::unsigned_from_string<unsigned long int>(s, out); }
 
-template <> inline unsigned long long int
-from_string(const std::string& s) { return detail::unsigned_from_string<unsigned long long int>(s); }
+template <> inline bool
+from_string(const std::string& s, unsigned long long int& out) { return detail::unsigned_from_string<unsigned long long int>(s, out); }
 
 // bool
 
 template <>
-inline bool from_string(const std::string& s)
+inline bool from_string(const std::string& s, bool& out)
 {
-    if (s == "true") return true;
-    else if (s == "false") return false;
-    const auto value = detail::signed_from_string<long long int>(s);
-    if (value == 1) return true;
-    else if (value == 0) return false;
-    throw bad_conversion();            
+    if (s == "true") { out = true; return true; }
+    else if (s == "false") { out = false; return true; }
+    long long int value{};
+    if (!detail::signed_from_string<long long int>(s, value)) return false;
+    if (value == 1) { out = true; return true; }
+    else if (value == 0) { out = false; return true; }
+    return false;           
 }
 
 // chars
 
 template <>
-inline char from_string(const std::string& s)
+inline bool from_string(const std::string& s, char& out)
 {
-    if (s.size() != 1) throw bad_conversion();
-    return s[0];            
+    if (s.size() != 1) return false;
+    out = s[0];
+    return true;           
 }
 
 // floating points
 
 template <>
-inline float from_string(const std::string& s)
+inline bool from_string(const std::string& s, float& out)
 {
-    if ( std::any_of(s.begin(), s.end(), [](char c){return std::isspace(c);} ) )
-        throw bad_conversion();
-    std::string::size_type sz;
-    float result = {};
-    try {
-        result = std::stof(s, &sz);
-    } catch (const std::exception&) {
-        throw bad_conversion();
-    }
-    if (sz != s.size())
-        throw bad_conversion();
-    return result;
+    if ( std::any_of(s.begin(), s.end(), [](char c){return std::isspace(static_cast<unsigned char>(c));} ) )
+        return false;
+    out = 0.0f;
+    char *endptr = nullptr;
+    out = std::strtof(s.c_str(), &endptr);
+    if (endptr != s.c_str() + s.size())
+        return false;
+    return true;
 }
 
 template <>
-inline double from_string(const std::string& s)
+inline bool from_string(const std::string& s, double& out)
 {
-    if ( std::any_of(s.begin(), s.end(), [](char c){return std::isspace(c);} ) )
-        throw bad_conversion();
-    std::string::size_type sz;
-    double result = {};
-    try {
-        result = std::stod(s, &sz);
-    } catch (const std::exception&) {
-        throw bad_conversion();
-    }
-    if (sz != s.size())
-        throw bad_conversion();
-    return result;
+    if ( std::any_of(s.begin(), s.end(), [](char c){return std::isspace(static_cast<unsigned char>(c));} ) )
+        return false;
+    out = 0.0;
+    char *endptr = nullptr;
+    out = std::strtod(s.c_str(), &endptr);
+    if (endptr != s.c_str() + s.size())
+        return false;
+    return true;
 }
 
 template <>
-inline long double from_string(const std::string& s)
+inline bool from_string(const std::string& s, long double& out)
 {
-    if ( std::any_of(s.begin(), s.end(), [](char c){return std::isspace(c);} ) )
-        throw bad_conversion();
-    std::string::size_type sz;
-    long double result = {};
-    try {
-        result = std::stold(s, &sz);
-    } catch (const std::exception&) {
-        throw bad_conversion();
-    }
-    if (sz != s.size())
-        throw bad_conversion();
-    return result;
+    if ( std::any_of(s.begin(), s.end(), [](char c){return std::isspace(static_cast<unsigned char>(c));} ) )
+        return false;
+    out = 0.0;
+    char *endptr = nullptr;
+    out = std::strtold(s.c_str(), &endptr);
+    if (endptr != s.c_str() + s.size())
+        return false;
+    return true;
 }
 
 // fallback: operator <<
 
 template <typename T>
-inline T from_string(const std::string& s)
+inline bool from_string(const std::string& s, T& out)
 {
     std::stringstream interpreter;
-    T result;
 
     if(!(interpreter << s) ||
-        !(interpreter >> result) ||
+        !(interpreter >> out) ||
         !(interpreter >> std::ws).eof())
-        throw bad_conversion();
+        return false;
 
-    return result;
+    return true;
 }
 
     } // namespace detail

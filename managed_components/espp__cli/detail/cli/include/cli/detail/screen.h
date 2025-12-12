@@ -1,6 +1,6 @@
 /*******************************************************************************
  * CLI - A simple command line interface.
- * Copyright (C) 2016-2021 Daniele Pallastrelli
+ * Copyright (C) 2016-2024 Daniele Pallastrelli
  *
  * Boost Software License - Version 1.0 - August 17th, 2003
  *
@@ -27,7 +27,20 @@
  * DEALINGS IN THE SOFTWARE.
  ******************************************************************************/
 
-#define BOOST_TEST_MAIN
-#define BOOST_TEST_MODULE CliTest
-#include <boost/test/unit_test.hpp>
-// #include <boost/test/included/unit_test.hpp>
+#ifndef CLI_DETAIL_SCREEN_H_
+#define CLI_DETAIL_SCREEN_H_
+
+#include "platform.h"
+#include "telnetscreen.h"
+
+#if defined(CLI_OS_LINUX) || defined(CLI_OS_MAC)
+    namespace cli { namespace detail { using LocalScreen = TelnetScreen; } }
+#elif defined(CLI_OS_WIN)
+    #include "winscreen.h"
+    namespace cli { namespace detail { using LocalScreen = WinScreen; } }
+#else
+    #error "Platform not supported (yet)."
+#endif
+
+#endif // CLI_DETAIL_SCREEN_H_
+

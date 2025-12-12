@@ -42,6 +42,8 @@ public:
     virtual ~HistoryStorage() = default;
     // Store a vector of commands in the history storage
     virtual void Store(const std::vector<std::string>& commands) = 0;
+    // changes the maximum number of commands that can be stored
+    virtual void SetMaxSize(size_t size) = 0;
     // Returns all the commands stored
     virtual std::vector<std::string> Commands() const = 0;
     // Clear the whole content of the storage

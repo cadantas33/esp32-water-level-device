@@ -1,6 +1,6 @@
 /*******************************************************************************
  * CLI - A simple command line interface.
- * Copyright (C) 2016-2021 Daniele Pallastrelli
+ * Copyright (C) 2016-2024 Daniele Pallastrelli
  *
  * Boost Software License - Version 1.0 - August 17th, 2003
  *
@@ -27,54 +27,18 @@
  * DEALINGS IN THE SOFTWARE.
  ******************************************************************************/
 
-#ifndef SCHEDULER_TEST_TEMPLATES_H_
-#define SCHEDULER_TEST_TEMPLATES_H_
+#ifndef CLI_DETAIL_PLATFORM_H_
+#define CLI_DETAIL_PLATFORM_H_
 
-#include <boost/test/unit_test.hpp>
-#include <thread>
+#if defined(__unix__) || defined(__unix) || defined(__linux__)
+    #define CLI_OS_LINUX
+#elif defined(WIN32) || defined(_WIN32) || defined(_WIN64)
+    #define CLI_OS_WIN
+#elif defined(__APPLE__) || defined(__MACH__)
+    #define CLI_OS_MAC
+#else
+    #error "Platform not supported (yet)."
+#endif
 
-template <typename S>
-void SchedulingTest()
-{
-    S scheduler;
-    bool done = false;
-    scheduler.Post( [&done](){ done = true; } );
-    scheduler.ExecOne();
-    BOOST_CHECK(done);
-}
+#endif // CLI_DETAIL_PLATFORM_H_
 
-template <typename S>
-void SameThreadTest()
-{
-    using namespace std;
-
-    S scheduler;
-    thread::id runThreadId;
-    thread::id postThreadId;
-    thread th( 
-        [&]()
-        {
-            postThreadId = this_thread::get_id();
-            scheduler.Post( 
-                [&runThreadId]()
-                { 
-                    runThreadId = this_thread::get_id();
-                }
-            );
-        }
-    );
-    th.join();
-    scheduler.ExecOne();
-    BOOST_CHECK_NE( runThreadId, postThreadId );
-    BOOST_CHECK_EQUAL( runThreadId, this_thread::get_id() );
-}
-
-template <typename S>
-void ExceptionTest()
-{
-    S scheduler;
-    scheduler.Post( [](){ throw 42; } );
-    BOOST_CHECK_THROW( scheduler.ExecOne(), int );
-}
-
-#endif // SCHEDULER_TEST_TEMPLATES_H_

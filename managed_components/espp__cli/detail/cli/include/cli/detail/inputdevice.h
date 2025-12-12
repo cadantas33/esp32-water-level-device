@@ -39,7 +39,7 @@ namespace cli
 namespace detail
 {
 
-enum class KeyType { ascii, up, down, left, right, backspace, canc, home, end, ret, eof, ignored };
+enum class KeyType { ascii, up, down, left, right, backspace, canc, home, end, ret, eof, ignored, clear, };
 
 class InputDevice
 {
@@ -48,6 +48,8 @@ public:
 
     explicit InputDevice(Scheduler& _scheduler) : scheduler(_scheduler) {}
     virtual ~InputDevice() = default;
+    virtual void ActivateInput() {}
+    virtual void DeactivateInput() {}
 
     template <typename H>
     void Register(H&& h) { handler = std::forward<H>(h); }

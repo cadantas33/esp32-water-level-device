@@ -1,6 +1,6 @@
 /*******************************************************************************
  * CLI - A simple command line interface.
- * Copyright (C) 2016-2021 Daniele Pallastrelli
+ * Copyright (C) 2016-2024 Daniele Pallastrelli
  *
  * Boost Software License - Version 1.0 - August 17th, 2003
  *
@@ -27,20 +27,36 @@
  * DEALINGS IN THE SOFTWARE.
  ******************************************************************************/
 
-#include <boost/test/unit_test.hpp>
-#include "cli/detail/commonprefix.h"
+#ifndef CLI_DETAIL_WINSCREEN_H_
+#define CLI_DETAIL_WINSCREEN_H_
 
-using namespace std;
-using namespace cli::detail;
+#if !defined(NOMINMAX)
+#define NOMINMAX 1 // prevent windows from defining min and max macros
+#endif // !defined(NOMINMAX)
+#include <windows.h>
 
-BOOST_AUTO_TEST_SUITE(CommonPrefixSuite)
-
-BOOST_AUTO_TEST_CASE(Everything)
+namespace cli
 {
-    BOOST_CHECK_EQUAL( CommonPrefix({"foo"}), "foo" );
-    BOOST_CHECK_EQUAL( CommonPrefix({"foo", "bar"}), "" );
-    BOOST_CHECK_EQUAL( CommonPrefix({"prefix_foo", "prefix_bar"}), "prefix_" );
-    BOOST_CHECK_EQUAL( CommonPrefix({"prefix foo", "prefix bar"}), "prefix " );
-}
+namespace detail
+{
 
-BOOST_AUTO_TEST_SUITE_END()
+struct WinScreen
+{
+    static void Clear(std::ostream& /*out*/)
+    {
+        HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+        COORD coord = { 0, 0 };
+        DWORD count;
+
+        CONSOLE_SCREEN_BUFFER_INFO csbi;
+        GetConsoleScreenBufferInfo(hStdOut, &csbi);
+
+        FillConsoleOutputCharacter(hStdOut, ' ', csbi.dwSize.X * csbi.dwSize.Y, coord, &count);
+        SetConsoleCursorPosition(hStdOut, coord);
+    }
+};
+
+} // namespace detail
+} // namespace cli
+
+#endif // CLI_DETAIL_WINSCREEN_H_

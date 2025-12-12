@@ -59,6 +59,14 @@ public:
             for (const auto& line: commands)
                 f << line << '\n';
     }
+    void SetMaxSize(size_t size) override
+    {
+        if (size < 1)
+            size = 1;
+        if (size < maxSize && commands.size() > size)
+            commands.erase(commands.begin(), commands.begin() + static_cast<std::deque<std::string>::difference_type>(commands.size() - size));
+        const_cast<std::size_t&>(maxSize) = size;
+    }
     std::vector<std::string> Commands() const override
     {
         std::vector<std::string> commands;

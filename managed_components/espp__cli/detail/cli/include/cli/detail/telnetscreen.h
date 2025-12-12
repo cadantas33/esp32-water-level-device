@@ -1,6 +1,6 @@
 /*******************************************************************************
  * CLI - A simple command line interface.
- * Copyright (C) 2016-2021 Daniele Pallastrelli
+ * Copyright (C) 2016-2024 Daniele Pallastrelli
  *
  * Boost Software License - Version 1.0 - August 17th, 2003
  *
@@ -27,27 +27,22 @@
  * DEALINGS IN THE SOFTWARE.
  ******************************************************************************/
 
-#include "scheduler_test_templates.h"
-#include "cli/loopscheduler.h"
+#ifndef CLI_DETAIL_TELNETSCREEN_H_
+#define CLI_DETAIL_TELNETSCREEN_H_
 
-using namespace std;
-using namespace cli;
+#include <ostream>
 
-BOOST_AUTO_TEST_SUITE(LoopSchedulerSuite)
-
-BOOST_AUTO_TEST_CASE(Basics)
+namespace cli
 {
-    SchedulingTest<LoopScheduler>();
-}
-
-BOOST_AUTO_TEST_CASE(SameThread)
+namespace detail
 {
-    SameThreadTest<LoopScheduler>();
-}
 
-BOOST_AUTO_TEST_CASE(Exceptions)
+struct TelnetScreen
 {
-    ExceptionTest<LoopScheduler>();
-}
+    static void Clear(std::ostream& out) { out << "\033[H\033[J" << std::flush; }
+};
 
-BOOST_AUTO_TEST_SUITE_END()
+} // namespace detail
+} // namespace cli
+
+#endif // CLI_DETAIL_TELNETSCREEN_H_
